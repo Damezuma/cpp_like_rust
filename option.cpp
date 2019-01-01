@@ -1,55 +1,69 @@
 template<typename T>
+void drop(T&& m)
+{
+	T t(m);
+}
+template<typename T>
 class Option
 {
 public:
 	Option(const Option &) = delete;
-	Option(Option && ref) :m_val(std::move(ref.m_val))
+	Option(Option && ref) 
 	{
-		ref.m_val = nullptr;
+		memcpy(m_chunk, ref.m_chunk, sizeof(T));
+		is_valid = ref.is_valid;
+		ref.is_valid = false;
 	}
-	Option() :m_val(nullptr) {};
-	Option(const T&& value) :m_val(new T(std::move(value))) {};
+	Option() :is_valid(false) {};
+	Option(T&& value) :m_chunk{ 0 }
+	{
+		T* t = (T*)m_chunk;
+		memcpy(m_chunk, &value, sizeof(T));
+		(void)std::move(value);
+		is_valid = true;
+	}
+	
 	~Option()
 	{
-		if (m_val != nullptr)
+		if (is_valid)
 		{
-			delete m_val;
+			drop(std::move(*(T*)m_chunk));
 		}
 	}
 	bool ok()
 	{
-		return m_val != nullptr;
+		return is_valid;
 	}
 	T& operator *()
 	{
-		return *m_val;
+		return *(T*)m_chunk;
 	}
 	T* operator ->()
 	{
-		return m_val;
+		return (T*)m_chunk;
 	}
 	template<typename function>
 	auto map(function func)
 	{
-		using OPTION = Option<decltype(func(*this->m_val))>;
-		OPTION res = ok() ? OPTION(std::move(func(*this->m_val))) : OPTION();
-		delete m_val;
-		m_val = nullptr;
+		using OPTION = Option<decltype(func(*(T*)m_chunk))>;
+		OPTION res = ok() ? OPTION(std::move(func(*(T*)m_chunk))) : OPTION();
+		is_valid = false;
 		return res;
 	}
 	T unwrap_or(const T && defaultValue)
 	{
-		T t = ok() ? std::move(*m_val) : defaultValue;
-		delete m_val;
-		m_val = nullptr;
+		T t = ok() ? std::move(*(T*)m_chunk) : defaultValue;
+
+		is_valid = false;
 		return t;
 	}
 	T unwrap()
 	{
-		return std::move(*m_val);
+		return std::move(*(T*)m_chunk);
 	}
 private:
-	T*m_val;
+	bool is_valid;
+	uint8_t m_chunk[sizeof(T)];
 };
 #include <string> 
 int main()
